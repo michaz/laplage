@@ -49,11 +49,6 @@ public class MyActivityEngine implements MobsimEngine, ActivityHandler {
 	}
 
 	@Override
-	public Netsim getMobsim() {
-		return internalInterface.getMobsim();
-	}
-
-	@Override
 	public void onPrepareSim() {
 		// Nothing to do here
 	}

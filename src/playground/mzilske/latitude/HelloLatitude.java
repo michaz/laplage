@@ -29,6 +29,7 @@ import org.matsim.api.core.v01.population.Leg;
 import org.matsim.api.core.v01.population.Person;
 import org.matsim.api.core.v01.population.Plan;
 import org.matsim.api.core.v01.population.PopulationWriter;
+import org.matsim.api.core.v01.population.Route;
 import org.matsim.contrib.otfvis.OTFVis;
 import org.matsim.core.api.experimental.events.EventsManager;
 import org.matsim.core.basic.v01.IdImpl;
@@ -41,6 +42,8 @@ import org.matsim.core.mobsim.qsim.QSim;
 import org.matsim.core.mobsim.qsim.agents.DefaultAgentFactory;
 import org.matsim.core.mobsim.qsim.agents.PopulationAgentSource;
 import org.matsim.core.mobsim.qsim.qnetsimengine.QNetsimEngine;
+import org.matsim.core.population.PopulationFactoryImpl;
+import org.matsim.core.population.routes.GenericRouteImpl;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.matsim.core.utils.geometry.CoordImpl;
 import org.matsim.core.utils.geometry.CoordUtils;
@@ -102,8 +105,8 @@ public class HelloLatitude {
 		Latitude latitude = new Latitude(new NetHttpTransport(), accessProtectedResource, jsonFactory);
 		try {
 
-			String minTime = Long.toString(new DateTime(2012,2,7,0,0).getMillis());
-			String maxTime = Long.toString(new DateTime(2012,2,7,23,59).getMillis());
+			String minTime = Long.toString(new DateTime(2012,4,17,0,0).getMillis());
+			String maxTime = Long.toString(new DateTime(2012,4,17,23,59).getMillis());
 			List<Location> locations = latitude.location.list().setGranularity("best").setMinTime(minTime).setMaxTime(maxTime).setMaxResults("1000").execute().getItems();
 			sortLocations(locations);
 			filterLocations(locations);
@@ -286,6 +289,7 @@ public class HelloLatitude {
 		Plan pl = scenario.getPopulation().getFactory().createPlan();
 		int nAct = 0;
 		Activity prev = null;
+		List<Segment> planElement = new ArrayList<Segment>();
 		for (Segment segment : segments) {
 			List<Location> locations = segment.locations;
 			Location representative = locations.get(0);
@@ -294,32 +298,53 @@ public class HelloLatitude {
 			DateTime end = new DateTime(getTime(locations.get(locations.size()-1)));
 			System.out.println(locations + " " + new Date(miliseconds));			
 			if(segment.isSignificant) {
+				Coord coord = centroid(segment.locations);
 				double startTime = start.getMillisOfDay() / 1000;
 				double endTime = end.getMillisOfDay() / 1000;
 				if (prev != null) {
 					Leg leg = scenario.getPopulation().getFactory().createLeg("unknown");
 					leg.setTravelTime(startTime - prev.getEndTime());
 					pl.addLeg(leg);
+					Route route = new GenericRouteImpl(null, null);
+					double distance;
+					if (planElement.isEmpty()) {
+						distance = CoordUtils.calcDistance(prev.getCoord(), coord);
+					} else {
+						distance = CoordUtils.calcDistance(prev.getCoord(), centroid(planElement.get(0).locations)) 
+								+ measure(planElement)
+								+ CoordUtils.calcDistance(centroid(planElement.get(planElement.size()-1).locations), coord);
+					}
+					route.setDistance(distance);
+					leg.setRoute(route);
 				}
-				Coord coord = centroid(segment.locations);
+				planElement.clear();
+				
 				Activity activity = scenario.getPopulation().getFactory().createActivityFromCoord("unknown", coord);
-
 				activity.setStartTime(startTime);
-
 				activity.setEndTime(endTime);
 				activity.setType("act" + (++nAct) + "_" + new Duration(start, end).getStandardMinutes() + "_" + segment.atLocation);
 				pl.addActivity(activity);
 				System.out.println(activity);
 				prev = activity;
 			} else {
-				// activity.setType("leg");
+				planElement.add(segment);
 			}
-
-
-
 		}
 		p.addPlan(pl);
 		scenario.getPopulation().addPerson(p);
+	}
+
+	private static double measure(List<Segment> planElement) {
+		double result = 0.0;
+		Coord prev = null;
+		for (Segment segment : planElement) {
+			Coord sis = centroid(segment.locations);
+			if (prev != null) {
+				result += CoordUtils.calcDistance(prev, sis);
+			}
+			prev = sis;
+		}
+		return result;
 	}
 
 	private static Coord getCoord(Location location) {
