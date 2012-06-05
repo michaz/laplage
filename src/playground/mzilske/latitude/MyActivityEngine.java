@@ -39,7 +39,7 @@ public class MyActivityEngine implements MobsimEngine, ActivityHandler {
 			MobsimAgent agent = activityEndsList.peek();
 			if (agent.getActivityEndTime() <= time) {
 				activityEndsList.poll();
-				unregisterAgentAtActivityLocation(agent);
+				// unregisterAgentAtActivityLocation(agent);
 				agent.endActivityAndComputeNextState(time);
 				internalInterface.arrangeNextAgentState(agent) ;
 			} else {

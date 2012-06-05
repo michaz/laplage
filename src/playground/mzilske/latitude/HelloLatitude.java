@@ -32,9 +32,11 @@ import org.matsim.api.core.v01.population.PopulationWriter;
 import org.matsim.api.core.v01.population.Route;
 import org.matsim.contrib.otfvis.OTFVis;
 import org.matsim.core.api.experimental.events.EventsManager;
+import org.matsim.core.api.experimental.network.NetworkWriter;
 import org.matsim.core.basic.v01.IdImpl;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
+import org.matsim.core.config.ConfigWriter;
 import org.matsim.core.config.groups.QSimConfigGroup;
 import org.matsim.core.events.EventsUtils;
 import org.matsim.core.gbl.MatsimRandom;
@@ -42,7 +44,6 @@ import org.matsim.core.mobsim.qsim.QSim;
 import org.matsim.core.mobsim.qsim.agents.DefaultAgentFactory;
 import org.matsim.core.mobsim.qsim.agents.PopulationAgentSource;
 import org.matsim.core.mobsim.qsim.qnetsimengine.QNetsimEngine;
-import org.matsim.core.population.PopulationFactoryImpl;
 import org.matsim.core.population.routes.GenericRouteImpl;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.matsim.core.utils.geometry.CoordImpl;
@@ -77,6 +78,8 @@ public class HelloLatitude {
 		Scenario scenario = ScenarioUtils.createScenario(config);
 
 		getLatitude(scenario);
+		new ConfigWriter(scenario.getConfig()).write("output/config.xml");
+		new NetworkWriter(scenario.getNetwork()).write("output/network.xml");
 		new PopulationWriter(scenario.getPopulation(), scenario.getNetwork()).write("output/population.xml");
 		play(scenario);
 
@@ -105,8 +108,8 @@ public class HelloLatitude {
 		Latitude latitude = new Latitude(new NetHttpTransport(), accessProtectedResource, jsonFactory);
 		try {
 
-			String minTime = Long.toString(new DateTime(2012,4,17,0,0).getMillis());
-			String maxTime = Long.toString(new DateTime(2012,4,17,23,59).getMillis());
+			String minTime = Long.toString(new DateTime(2012,5,2,2,0).getMillis());
+			String maxTime = Long.toString(new DateTime(2012,5,2,23,59).getMillis());
 			List<Location> locations = latitude.location.list().setGranularity("best").setMinTime(minTime).setMaxTime(maxTime).setMaxResults("1000").execute().getItems();
 			sortLocations(locations);
 			filterLocations(locations);
@@ -354,9 +357,9 @@ public class HelloLatitude {
 	private static void play(Scenario scenario) {
 		EventsManager events = EventsUtils.createEventsManager();
 		QSim qSim = new QSim(scenario, events);
-		MyActivityEngine activityEngine = new MyActivityEngine();
-		qSim.addMobsimEngine(activityEngine);
-		qSim.addActivityHandler(activityEngine);
+//		MyActivityEngine activityEngine = new MyActivityEngine();
+//		qSim.addMobsimEngine(activityEngine);
+//		qSim.addActivityHandler(activityEngine);
 		QNetsimEngine qNetsimEngine = new QNetsimEngine( qSim, new Random());
 		qSim.addMobsimEngine(qNetsimEngine);
 		qSim.addAgentSource(new PopulationAgentSource(scenario.getPopulation(), new DefaultAgentFactory(qSim), qSim));
