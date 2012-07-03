@@ -8,7 +8,6 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Random;
 import java.util.Set;
 
 import org.jgrapht.Graphs;
@@ -30,29 +29,19 @@ import org.matsim.api.core.v01.population.Person;
 import org.matsim.api.core.v01.population.Plan;
 import org.matsim.api.core.v01.population.PopulationWriter;
 import org.matsim.api.core.v01.population.Route;
-import org.matsim.contrib.otfvis.OTFVis;
-import org.matsim.core.api.experimental.events.EventsManager;
 import org.matsim.core.api.experimental.network.NetworkWriter;
 import org.matsim.core.basic.v01.IdImpl;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.config.ConfigWriter;
 import org.matsim.core.config.groups.QSimConfigGroup;
-import org.matsim.core.events.EventsUtils;
 import org.matsim.core.gbl.MatsimRandom;
-import org.matsim.core.mobsim.qsim.QSim;
-import org.matsim.core.mobsim.qsim.agents.DefaultAgentFactory;
-import org.matsim.core.mobsim.qsim.agents.PopulationAgentSource;
-import org.matsim.core.mobsim.qsim.qnetsimengine.QNetsimEngine;
 import org.matsim.core.population.routes.GenericRouteImpl;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.matsim.core.utils.geometry.CoordImpl;
 import org.matsim.core.utils.geometry.CoordUtils;
 import org.matsim.core.utils.geometry.CoordinateTransformation;
 import org.matsim.core.utils.geometry.transformations.TransformationFactory;
-import org.matsim.vis.otfvis.OnTheFlyServer;
-
-import playground.mzilske.osm.JXMapOTFVisClient;
 
 import com.google.api.client.googleapis.auth.oauth2.draft10.GoogleAccessProtectedResource;
 import com.google.api.client.http.HttpTransport;
@@ -70,7 +59,7 @@ public class HelloLatitude {
 
 		Config config = ConfigUtils.createConfig();
 		config.global().setCoordinateSystem(COORDINATE_SYSTEM);
-		// config.otfVis().setMapOverlayMode(true);
+		config.otfVis().setMapOverlayMode(true);
 		MatsimRandom.reset(config.global().getRandomSeed());
 		if (config.getQSimConfigGroup() == null) {
 			config.addQSimConfigGroup(new QSimConfigGroup());
@@ -81,7 +70,6 @@ public class HelloLatitude {
 		new ConfigWriter(scenario.getConfig()).write("output/config.xml");
 		new NetworkWriter(scenario.getNetwork()).write("output/network.xml");
 		new PopulationWriter(scenario.getPopulation(), scenario.getNetwork()).write("output/population.xml");
-		play(scenario);
 
 
 	}
@@ -135,20 +123,24 @@ public class HelloLatitude {
 	}
 
 	private static List<SignificantLocation> findSignificantLocations(List<Segment> segments) {
-		UndirectedGraph<Segment, DefaultWeightedEdge> g;
-		double bias = 1;
+		List<SignificantLocation> result = new ArrayList<SignificantLocation>();
+		
+		
 		List<Segment> significantActivities = new ArrayList<Segment>();
 		for (Segment segment : segments) {
 			if (segment.isSignificant) {
 				significantActivities.add(segment);
 			}
 		}
+		
+		
+		// Idiotische Art, in quadratischer Zeit den euklidischen MST zu berechnen.
+		// Das natürlich beizeiten durch O(nlogn)-Algorithmus ersetzen.
+		UndirectedGraph<Segment, DefaultWeightedEdge> g;
 		g = new SimpleWeightedGraph<Segment, DefaultWeightedEdge>(DefaultWeightedEdge.class);
-
 		for (Segment segment : significantActivities) {
 			g.addVertex(segment);
 		}
-
 		for (int i=0; i < significantActivities.size(); ++i) {
 			for (int j=i+1; j< significantActivities.size(); ++j) {
 				Segment v1 = significantActivities.get(i);
@@ -156,7 +148,6 @@ public class HelloLatitude {
 				Graphs.addEdge(g, v1, v2, CoordUtils.calcDistance(centroid(v1.locations), centroid(v2.locations)));
 			}
 		}
-
 		KruskalMinimumSpanningTree<Segment, DefaultWeightedEdge> mst = new KruskalMinimumSpanningTree<Segment, DefaultWeightedEdge>(g);
 
 		Set<DefaultWeightedEdge> edges = mst.getEdgeSet();
@@ -180,13 +171,14 @@ public class HelloLatitude {
 			System.out.println(cluster);
 			SignificantLocation significantLocation = new SignificantLocation();
 			significantLocation.id = locationId++;
+			result.add(significantLocation);
 			for (Segment activity : cluster) {
 				activity.atLocation = significantLocation;
 			}
+			
 		}
 		
-		return null;
-
+		return result;
 	}
 
 	private static List<Segment> classifySegments(List<List<Location>> segmentation) {
@@ -354,19 +346,7 @@ public class HelloLatitude {
 		return t.transform(new CoordImpl(((BigDecimal) location.getLongitude()).doubleValue(), ((BigDecimal) location.getLatitude()).doubleValue()));
 	}
 
-	private static void play(Scenario scenario) {
-		EventsManager events = EventsUtils.createEventsManager();
-		QSim qSim = new QSim(scenario, events);
-//		MyActivityEngine activityEngine = new MyActivityEngine();
-//		qSim.addMobsimEngine(activityEngine);
-//		qSim.addActivityHandler(activityEngine);
-		QNetsimEngine qNetsimEngine = new QNetsimEngine( qSim, new Random());
-		qSim.addMobsimEngine(qNetsimEngine);
-		qSim.addAgentSource(new PopulationAgentSource(scenario.getPopulation(), new DefaultAgentFactory(qSim), qSim));
-		OnTheFlyServer server = OTFVis.startServerAndRegisterWithQSim(scenario.getConfig(), scenario, events, qSim);
-		JXMapOTFVisClient.run(scenario.getConfig(), server);
-		qSim.run();
-	}
+
 
 	private static double accuracy(List<Location> segment) {
 		double result = 0;

@@ -1,4 +1,4 @@
-package playground.mzilske.latitude;
+/*package playground.mzilske.latitude;
 
 import java.util.Random;
 
@@ -43,4 +43,4 @@ public class PlayLatitude {
 		qSim.run();
 	}
 
-}
+}*/
