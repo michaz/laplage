@@ -1,15 +1,9 @@
 package playground.mzilske.latitude;
-import java.io.IOException;
-import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
 
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.json.jackson2.JacksonFactory;
+import com.pagr.backend.pagr.Pagr;
+import com.pagr.backend.pagr.model.CellUpdate;
 import org.jgrapht.Graphs;
 import org.jgrapht.UndirectedGraph;
 import org.jgrapht.alg.ConnectivityInspector;
@@ -20,50 +14,44 @@ import org.jgrapht.graph.UndirectedSubgraph;
 import org.joda.time.DateTime;
 import org.joda.time.Duration;
 import org.matsim.api.core.v01.Coord;
+import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.network.Link;
 import org.matsim.api.core.v01.network.Node;
-import org.matsim.api.core.v01.population.Activity;
-import org.matsim.api.core.v01.population.Leg;
-import org.matsim.api.core.v01.population.Person;
-import org.matsim.api.core.v01.population.Plan;
-import org.matsim.api.core.v01.population.PopulationWriter;
-import org.matsim.api.core.v01.population.Route;
-import org.matsim.core.api.experimental.network.NetworkWriter;
-import org.matsim.core.basic.v01.IdImpl;
+import org.matsim.api.core.v01.population.*;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.config.ConfigWriter;
-import org.matsim.core.config.groups.QSimConfigGroup;
 import org.matsim.core.gbl.MatsimRandom;
-import org.matsim.core.population.routes.GenericRouteImpl;
+import org.matsim.core.network.NetworkWriter;
 import org.matsim.core.scenario.ScenarioUtils;
 import org.matsim.core.utils.geometry.CoordImpl;
 import org.matsim.core.utils.geometry.CoordUtils;
 import org.matsim.core.utils.geometry.CoordinateTransformation;
 import org.matsim.core.utils.geometry.transformations.TransformationFactory;
 
-import com.google.api.client.googleapis.auth.oauth2.draft10.GoogleAccessProtectedResource;
-import com.google.api.client.http.HttpTransport;
-import com.google.api.client.http.javanet.NetHttpTransport;
-import com.google.api.client.json.jackson.JacksonFactory;
-import com.google.api.services.latitude.Latitude;
-import com.google.api.services.latitude.model.Location;
+import java.io.IOException;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class HelloLatitude {
 
 	private static final String COORDINATE_SYSTEM = TransformationFactory.DHDN_GK4;
 	private static CoordinateTransformation t = TransformationFactory.getCoordinateTransformation("WGS84", COORDINATE_SYSTEM);
 
+	public static Pagr create() {
+		return new Pagr.Builder(
+				new NetHttpTransport(),
+				new JacksonFactory(), null)
+				.setRootUrl("https://pagrff.appspot.com/_ah/api/")
+				.build();
+	}
+
 	public static void main(String[] args) {
 
 		Config config = ConfigUtils.createConfig();
 		config.global().setCoordinateSystem(COORDINATE_SYSTEM);
-		config.otfVis().setMapOverlayMode(true);
 		MatsimRandom.reset(config.global().getRandomSeed());
-		if (config.getQSimConfigGroup() == null) {
-			config.addQSimConfigGroup(new QSimConfigGroup());
-		}
 		Scenario scenario = ScenarioUtils.createScenario(config);
 
 		getLatitude(scenario);
@@ -74,31 +62,22 @@ public class HelloLatitude {
 
 	}
 
+
 	private static void getLatitude(Scenario scenario) {
-		String SCOPE = "https://www.googleapis.com/auth/latitude.all.best";
-		JacksonFactory jsonFactory = new JacksonFactory();
-		HttpTransport transport = new NetHttpTransport();
-		OAuth2ClientCredentials.errorIfNotSpecified();
-		GoogleAccessProtectedResource accessProtectedResource;
+		Pagr pagr = create();
 		try {
-			accessProtectedResource = OAuth2Native.authorize(transport,
-					jsonFactory,
-					new LocalServerReceiver(),
-					null,
-					"google-chrome",
-					OAuth2ClientCredentials.CLIENT_ID,
-					OAuth2ClientCredentials.CLIENT_SECRET,
-					SCOPE);
-		} catch (Exception e) {
-			throw new RuntimeException(e);
-		}
-
-		Latitude latitude = new Latitude(new NetHttpTransport(), accessProtectedResource, jsonFactory);
-		try {
-
-			String minTime = Long.toString(new DateTime(2012,5,2,2,0).getMillis());
-			String maxTime = Long.toString(new DateTime(2012,5,2,23,59).getMillis());
-			List<Location> locations = latitude.location.list().setGranularity("best").setMinTime(minTime).setMaxTime(maxTime).setMaxResults("1000").execute().getItems();
+			long minTime = new DateTime(2015,7,14,2,0).getMillis();
+			long maxTime = new DateTime(2015,7,14,23,59).getMillis();
+			List<CellUpdate> cellUpdates = pagr.cellupdate().list().setMinTime(minTime).setMaxTime(maxTime).execute().getItems();
+			List<Location> locations = cellUpdates.stream()
+					.filter(cu -> cu.getLatitude() != null && cu.getLongitude() != null)
+					.map(cu -> {
+						Location location = new Location();
+						location.setLatitude(cu.getLatitude());
+						location.setLongitude(cu.getLongitude());
+						location.setTimestampMs(cu.getTimestamp());
+						return location;
+					}).collect(Collectors.toList());
 			sortLocations(locations);
 			filterLocations(locations);
 			System.out.println("Before segmentation: " + locations.size());
@@ -110,16 +89,9 @@ public class HelloLatitude {
 
 			createLinks(scenario, segmentation);
 			createActivities(scenario, segments, significantLocations);
-
-
-
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			throw new RuntimeException(e);
 		}
-
-
-
 	}
 
 	private static List<SignificantLocation> findSignificantLocations(List<Segment> segments) {
@@ -186,8 +158,8 @@ public class HelloLatitude {
 		for (List<Location> locations : segmentation) {
 			Segment segment = new Segment();
 			segment.locations = locations;
-			DateTime start = new DateTime(getTime(locations.get(0)));
-			DateTime end = new DateTime(getTime(locations.get(locations.size()-1)));
+			DateTime start = new DateTime(locations.get(0).getTimestampMs());
+			DateTime end = new DateTime(locations.get(locations.size() - 1).getTimestampMs());
 			long durationInMinutes = new Duration(start, end).getStandardMinutes();
 			if (durationInMinutes > 5) {
 				segment.isSignificant = true;
@@ -221,20 +193,16 @@ public class HelloLatitude {
 	}
 
 	private static boolean liesCompletelyIn(Location location, Location locationInSegment) {
-		if (CoordUtils.calcDistance(getCoord(location), getCoord(locationInSegment)) < (accuracy(locationInSegment) - accuracy(location))) {
+		if (CoordUtils.calcDistance(getCoord(location), getCoord(locationInSegment)) < (locationInSegment.getAccuracy() - location.getAccuracy())) {
 			return true;
 		} else {
 			return false;
 		}
 	}
 
-	private static long accuracy(Location locationInSegment) {
-		return ((BigDecimal) locationInSegment.getAccuracy()).longValue();
-	}
-
 	private static boolean clusterCriterion(List<Location> segment, Location location) {
 		if (segment.isEmpty()) return true;
-		return CoordUtils.calcDistance(getCoord(segment.get(0)), getCoord(location)) - accuracy(segment.get(0)) - accuracy(location) <= 70.0;
+		return CoordUtils.calcDistance(getCoord(segment.get(0)), getCoord(location)) - segment.get(0).getAccuracy() - location.getAccuracy() <= 70.0;
 	}
 
 	private static void sortLocations(List<Location> locations) {
@@ -242,20 +210,13 @@ public class HelloLatitude {
 
 			@Override
 			public int compare(Location arg0, Location arg1) {
-				return new Long(getTime(arg0)).compareTo(new Long(getTime(arg1)));
+				return new Long(arg0.getTimestampMs()).compareTo(new Long(arg1.getTimestampMs()));
 			}
 
 		});
 	}
 
 	private static void filterLocations(List<Location> locations) {
-		Iterator<Location> i = locations.iterator();
-		while (i.hasNext()) {
-			Location l = i.next();
-			if (l.getAccuracy() == null) {
-				i.remove();
-			}
-		}
 	}
 
 	private static void createLinks(Scenario scenario, List<List<Location>> segmentation) {
@@ -264,10 +225,10 @@ public class HelloLatitude {
 		for (List<Location> location : segmentation) {
 			Location representative = location.get(0);
 			Coord coord = getCoord(representative);
-			Node node = scenario.getNetwork().getFactory().createNode(new IdImpl((String) representative.getTimestampMs()), coord);
+			Node node = scenario.getNetwork().getFactory().createNode(Id.createNodeId(representative.getTimestampMs()), coord);
 			scenario.getNetwork().addNode(node);
 			if (prev != null) {
-				Link link = scenario.getNetwork().getFactory().createLink(new IdImpl(prevNode.getId().toString() + node.getId().toString()), prevNode, node);
+				Link link = scenario.getNetwork().getFactory().createLink(Id.createLinkId(prevNode.getId().toString() + node.getId().toString()), prevNode, node);
 				scenario.getNetwork().addLink(link);
 			}
 			prev = coord;
@@ -275,12 +236,8 @@ public class HelloLatitude {
 		}
 	}
 
-	private static long getTime(Location location) {
-		return Long.parseLong((String) location.getTimestampMs());
-	}
-
 	private static void createActivities(Scenario scenario, List<Segment> segments, List<SignificantLocation> significantLocations) {
-		Person p = scenario.getPopulation().getFactory().createPerson(new IdImpl("p"));
+		Person p = scenario.getPopulation().getFactory().createPerson(Id.createPersonId("p"));
 		Plan pl = scenario.getPopulation().getFactory().createPlan();
 		int nAct = 0;
 		Activity prev = null;
@@ -288,9 +245,9 @@ public class HelloLatitude {
 		for (Segment segment : segments) {
 			List<Location> locations = segment.locations;
 			Location representative = locations.get(0);
-			long miliseconds = getTime(representative);
-			DateTime start = new DateTime(getTime(locations.get(0)));
-			DateTime end = new DateTime(getTime(locations.get(locations.size()-1)));
+			long miliseconds = representative.getTimestampMs();
+			DateTime start = new DateTime(locations.get(0).getTimestampMs());
+			DateTime end = new DateTime(locations.get(locations.size() - 1).getTimestampMs());
 			System.out.println(locations + " " + new Date(miliseconds));			
 			if(segment.isSignificant) {
 				Coord coord = centroid(segment.locations);
@@ -300,17 +257,6 @@ public class HelloLatitude {
 					Leg leg = scenario.getPopulation().getFactory().createLeg("unknown");
 					leg.setTravelTime(startTime - prev.getEndTime());
 					pl.addLeg(leg);
-					Route route = new GenericRouteImpl(null, null);
-					double distance;
-					if (planElement.isEmpty()) {
-						distance = CoordUtils.calcDistance(prev.getCoord(), coord);
-					} else {
-						distance = CoordUtils.calcDistance(prev.getCoord(), centroid(planElement.get(0).locations)) 
-								+ measure(planElement)
-								+ CoordUtils.calcDistance(centroid(planElement.get(planElement.size()-1).locations), coord);
-					}
-					route.setDistance(distance);
-					leg.setRoute(route);
 				}
 				planElement.clear();
 				
@@ -343,7 +289,7 @@ public class HelloLatitude {
 	}
 
 	private static Coord getCoord(Location location) {
-		return t.transform(new CoordImpl(((BigDecimal) location.getLongitude()).doubleValue(), ((BigDecimal) location.getLatitude()).doubleValue()));
+		return t.transform(new CoordImpl(location.getLongitude(), location.getLatitude()));
 	}
 
 
@@ -351,7 +297,7 @@ public class HelloLatitude {
 	private static double accuracy(List<Location> segment) {
 		double result = 0;
 		for (Location location : segment) {
-			result += accuracy(location);
+			result += location.getAccuracy();
 		}
 		return result / segment.size();
 	}
